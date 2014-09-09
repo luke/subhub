@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script type="text/javascript" src="http://cdn.sockjs.org/sockjs-0.3.min.js"></script>
+<script>
+if (!window.location.origin) { // Some browsers (mainly IE) do not have this property, so we need to build it manually...
+  window.location.origin = window.location.protocol + '//' + window.location.hostname + (window.location.port ? (':' + window.location.port) : '');
+}
+
+var origin = window.location.origin;
+
+// options usage example
+var options = {
+		debug: true,
+		devel: true,
+		// 'websocket', 'xdr-streaming', 'xhr-streaming', 'iframe-eventsource',
+		protocols_whitelist: [ 'iframe-htmlfile', 'xdr-polling', 'xhr-polling', 'iframe-xhr-polling', 'jsonp-polling']
+};
+
+var sock = new SockJS(origin+'/pusher', undefined, options);
+
+sock.onopen = function() {
+	console.log('connection open');
+
+};
+
+sock.onmessage = function(e) {
+	console.log("on message", e);
+};
+
+sock.onclose = function() {
+	console.log('connection closed');
+};
+
+</script>
+<meta charset="UTF-8">
+<title>SockJS Test</title>
+</head>
+<body>
+<h1>Sock JS Test</h1>
+</body>
+</html>

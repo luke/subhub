@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script src="//js.pusher.com/2.2/pusher.min.js"></script>
+<script>
+
+	if(window['Pusher']==undefined){
+		document.write("<scr"+"ipt src=\"./2.2.2/pusher.min.js\"></scr"+"ipt>")
+	}
+</script>
+<script>
+
+	Pusher.log = function(message) {
+      if (window.console && window.console.log) {
+        window.console.log(message);
+      }
+    };
+	
+	var sc = true; 
+	if(sc){
+		['sockjs_host','stats_host','cdn_http','cdn_https'].forEach(function(x){ 
+			Pusher[x] = Pusher[x].replace('pusher.com','screencloud.io:8081') 
+		});
+		Pusher.host = 'ws.screencloud.io'
+		Pusher.Dependencies.options.cdn_http = 'http://js.screencloud.io:8081';
+		Pusher.Dependencies.options.cdn_https = 'https://js.screencloud.io:8443';  
+		
+		Pusher.getClusterConfig = function(clusterName){ 
+			return { 
+				wsHost: "ws-" + clusterName + ".screencloud.io:8081", 
+				httpHost: "sockjs-" + clusterName + ".screencloud.io:8081"
+			}
+		}
+	    // Enable pusher logging - don't include this in production
+	    Pusher.log = function(message) {
+	      if (window.console && window.console.log) {
+	        window.console.log(message);
+	      }
+	    };
+		
+		var newUuid = function(){
+			return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+			    var r = Math.random()*16|0, v = c == 'x' ? r : (r&0x3|0x8);
+			    return v.toString(16);
+			});
+		}
+		
+		if(false){
+			var sid = newUuid(); 
+			for(var scheme in Pusher.URLSchemes){
+				Pusher.URLSchemes[scheme]._getInitial = Pusher.URLSchemes[scheme].getInitial;
+				Pusher.URLSchemes[scheme].getInitial = function(key, params){ return this._getInitial(key, params) + "&sid="+sid };	
+			}
+			Pusher.sid = sid;			
+		}
+
+		
+	}
+	
+	var options = {
+    	// authEndpoint: "http://api.screencloud.io:8081/pusher/auth",
+		encrypted: false,
+		authTransport: 'ajax',
+		auth: {
+    		params: { foo: "bar" },
+  		  	headers: { baz: "boo" }
+  		},
+		enabledTransports: ['ws'], // sockjs flash
+		disabledTransports: ['sockjs', 'flash'],
+//		wsHost: "ws.screencloud.io", 
+//		wsPort: "8081",
+//		wssPort: "8443",
+//		httpHost: "sockjs.screencloud.io",
+//		httpPort: "8081",
+//		httpsPort: "8443"
+
+	}
+ 
+	if(sc){
+		
+		Pusher.cdn_http="http://js.screencloud.io:8081/";
+		Pusher.cdn_https="https://js.screencloud.io:8443/";
+		
+    	options.authEndpoint = "http://api.screencloud.io:8081/pusher/auth"
+		options.wsHost = "ws.screencloud.io" 
+		options.wsPort ="8081"
+		options.wssPort = "8443"
+		options.httpHost = "sockjs.screencloud.io"
+		options.httpPort ="8081"
+		options.httpsPort = "8443"
+	}
+	
+	// 22c558758633f982d361
+	
+    var pusher = new Pusher('22c558758633f982d361',options);
+    var channel = pusher.subscribe('test_channel');
+    channel.bind('my_event', function(data) {
+      alert(data.message);
+    });
+
+</script>
+<meta charset="UTF-8">
+<title>Pusher Test</title>
+</head>
+<body>
+<h1>Pusher Test</h1>
+</body>
+</html>

@@ -1,0 +1,28 @@
+# SUBHUB
+[x] - handle different messages, subscribe, unsubscribe, etc
+[x] - test firehose mode works
+[x] - quick check for race conditions 
+[x] - add flags to server 
+[ ] - object / keyspace notification tracking in redis
+	- on subscribe get the key and send as json 
+	- on change notification, get again and send as json
+	- make this optional in the settings for pubsub
+[ ] - socket identification and presence
+[ ] - socket state, with expires. allow clients to set some state
+[ ] - data should be passed through during pubsub without any decoding. needs more testing
+[ ] - work out how to publish messages to server, something about client event
+[ ] - auth on channel subscribe, private, and pusher style presense channels
+[ ] - test with the flash transport (low priority)
+[ ] - add some benchmarks, which is better normal or firehose
+[ ] - add rate limits, max message sizes, etc 
+
+# PLAYER
+[ ] - review the old player js 
+[ ] - review the new player js 
+[ ] - make a call on updating old or rolling with new
+[ ] - integrate pusher into the new player js 
+[ ] - way to sub / unsub between frames, unsub on page unload 
+[ ] - think about the db structure some more 
+
+# MOBILE 
+... 
