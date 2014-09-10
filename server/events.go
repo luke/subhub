@@ -81,6 +81,3 @@ type MemberAddedData struct {
 type MemberRemovedData struct {
 	UserId string `json:"user_id"`
 }
-
-const PRIVATE_CHANNEL_PREFIX = "private-"
-const PRESENCE_CHANNEL_PREFIX = "presence-"

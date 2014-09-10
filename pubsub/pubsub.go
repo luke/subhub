@@ -7,6 +7,7 @@ import (
 	"github.com/xuyu/goredis"
 	"gopkg.in/fatih/set.v0"
 	"log"
+	"strings"
 	"sync"
 )
 
@@ -16,18 +17,16 @@ const (
 )
 
 type Options struct {
-	PubSubNodeId       string `json:"pubsub_node_id"`
-	PubSubMode         int    `json:"pubsub_mode"`
-	RedisMasterAddress string `json:"redis_master_address"`
-	RedisSlaveAddress  string `json:"redis_slave_address"`
-	RedisSubAddress    string `json:"redis_sub_address"`
+	PubSubNodeId    string `json:"pubsub_node_id"`
+	PubSubMode      int    `json:"pubsub_mode"`
+	RedisPubAddress string `json:"redis_pub_address"`
+	RedisSubAddress string `json:"redis_sub_address"`
 }
 
 var DefaultRedisAddress = "127.0.0.1:6379"
 var DefaultOptions = Options{
-	RedisMasterAddress: DefaultRedisAddress,
-	RedisSlaveAddress:  DefaultRedisAddress,
-	RedisSubAddress:    DefaultRedisAddress,
+	RedisPubAddress: DefaultRedisAddress,
+	RedisSubAddress: DefaultRedisAddress,
 }
 
 type Message struct {
@@ -42,10 +41,9 @@ type pubsub struct {
 	opts *Options
 
 	// redis clients
-	redisMaster *goredis.Redis  // used for writes
-	redisSlave  *goredis.Redis  // used for reads
-	redisSub    *goredis.Redis  // used for sub
-	redisPubSub *goredis.PubSub // used for subscribe, unsubscribe
+	redisPub        *goredis.Redis  // used for pub
+	redisSub        *goredis.Redis  // used for sub
+	redisSubscriber *goredis.PubSub // used for subscribe, unsubscribe
 
 	sublist *sublist.Sublist
 	topics  map[string]*set.Set
@@ -57,11 +55,19 @@ type Subscriber interface {
 	Receive(string, *Message)
 }
 
+type Publisher interface {
+	ID() string
+}
+
 type PubSub interface {
 	Subscribe(Subscriber, string)
 	Unsubscribe(Subscriber, string)
 	UnsubscribeAll(Subscriber)
-	Publish(string, *Message) (int64, error)
+	IsSubscribed(Subscriber, string) bool
+	SubscribedList(Subscriber) []interface{} // todo: cast to []Subscriber
+	SubscriberList(string) []interface{}     // todo: cast to []string
+	Publish(Publisher, string, *Message) (int64, error)
+	// Publish(string, *Message) (int64, error)
 	Start() error
 }
 
@@ -95,7 +101,7 @@ func (ps *pubsub) Start() error {
 	}
 	if ps.opts.PubSubMode == PubSubModeFirehose {
 		// turn on the firehose
-		ps.redisPubSub.PSubscribe("*")
+		ps.redisSubscriber.PSubscribe("*")
 	}
 	go ps.subLoop()
 	return nil
@@ -105,23 +111,15 @@ func (ps *pubsub) connectRedis() error {
 	ps.lock.Lock()
 	defer ps.lock.Unlock()
 
-	log.Println("connect redis")
+	log.Println("pubsub connect redis")
 
-	redisMaster, err := goredis.Dial(&goredis.DialConfig{
-		Address: ps.opts.RedisMasterAddress})
+	redisPub, err := goredis.Dial(&goredis.DialConfig{
+		Address: ps.opts.RedisPubAddress})
 	if err != nil {
-		log.Fatal("Unable to connect to redis master", err)
+		log.Fatal("Unable to connect to redis pub", err)
 		return err
 	}
-	ps.redisMaster = redisMaster
-
-	redisSlave, err := goredis.Dial(&goredis.DialConfig{
-		Address: ps.opts.RedisSlaveAddress})
-	if err != nil {
-		log.Fatal("Unable to connect to redis slave", err)
-		return err
-	}
-	ps.redisSlave = redisSlave
+	ps.redisPub = redisPub
 
 	redisSub, err := goredis.Dial(&goredis.DialConfig{
 		Address: ps.opts.RedisSubAddress})
@@ -131,12 +129,12 @@ func (ps *pubsub) connectRedis() error {
 	}
 	ps.redisSub = redisSub
 
-	redisPubSub, err := redisSub.PubSub()
+	redisSubscriber, err := redisSub.PubSub()
 	if err != nil {
-		log.Fatal("Unable to create redis pubsub", err)
+		log.Fatal("Unable to create redis subscriber", err)
 		return err
 	}
-	ps.redisPubSub = redisPubSub
+	ps.redisSubscriber = redisSubscriber
 	return nil
 }
 
@@ -149,10 +147,12 @@ const (
 	EVENT_PUNSUBSCRIBE = "punsubscribe"
 )
 
+const KEYSPACE_NOTIFICATION_PREFIX = "__keyspace@0__:"
+
 func (ps *pubsub) subLoop() {
 	for {
 		log.Println("trying to recieve")
-		list, err := ps.redisPubSub.Receive()
+		list, err := ps.redisSubscriber.Receive()
 		if err != nil {
 			log.Fatal("Unable to recieve from redis", err)
 			break
@@ -180,7 +180,14 @@ func (ps *pubsub) subLoop() {
 		idx++
 		payload := list[idx]
 		msg := &Message{}
-		// log.Println("raw json  %s", payload)
+
+		// special case to deal with keyspace notifications
+		if strings.HasPrefix(channel, KEYSPACE_NOTIFICATION_PREFIX) {
+			msg.Name = payload
+			ps.forwardToLocal(channel, msg)
+			continue
+		}
+
 		if err := json.Unmarshal([]byte(payload), msg); err == nil {
 			if msg.NodeId == ps.opts.PubSubNodeId {
 				log.Println("skip, same node id")
@@ -213,7 +220,7 @@ func (ps *pubsub) Subscribe(sub Subscriber, topic string) {
 		if ps.opts.PubSubMode == PubSubModeNormal {
 			// assuming redis pubsub client is also thread safe
 			log.Println("subscribe redis to", topic)
-			ps.redisPubSub.Subscribe(topic)
+			ps.redisSubscriber.Subscribe(topic)
 		} else {
 			log.Println("firehose mode?")
 		}
@@ -233,7 +240,7 @@ func (ps *pubsub) Unsubscribe(sub Subscriber, topic string) {
 	if subs.Size() == 0 {
 		if ps.opts.PubSubMode == PubSubModeNormal {
 			log.Println("unsubscribe redis from", topic)
-			ps.redisPubSub.UnSubscribe(topic)
+			ps.redisSubscriber.UnSubscribe(topic)
 		}
 		ps.lock.Lock()
 		delete(ps.topics, topic)
@@ -255,7 +262,39 @@ func (ps *pubsub) UnsubscribeAll(sub Subscriber) {
 	}
 }
 
-func (ps *pubsub) Publish(channel string, msg *Message) (int64, error) {
+var emptyList = make([]interface{}, 0)
+
+func (ps *pubsub) IsSubscribed(sub Subscriber, topic string) bool {
+	ps.lock.RLock()
+	defer ps.lock.RUnlock()
+	if s, ok := ps.subs[sub]; ok {
+		return s.Has(topic)
+	}
+	return false
+}
+
+func (ps *pubsub) SubscribedList(sub Subscriber) []interface{} {
+	ps.lock.RLock()
+	defer ps.lock.RUnlock()
+	if s, ok := ps.subs[sub]; ok {
+		return s.List()
+	}
+	return emptyList
+}
+
+func (ps *pubsub) SubscriberList(topic string) []interface{} {
+	ps.lock.RLock()
+	defer ps.lock.RUnlock()
+	if s, ok := ps.topics[topic]; ok {
+		return s.List()
+	}
+	return emptyList
+}
+
+func (ps *pubsub) Publish(pub Publisher, channel string, msg *Message) (int64, error) {
+	if pub != nil {
+		msg.Sender = pub.ID()
+	}
 	msg.NodeId = ps.opts.PubSubNodeId
 	var count int64 = 0
 	var num int64 = 0
@@ -300,7 +339,7 @@ func (ps *pubsub) forwardToRemote(channel string, msg *Message) (int64, error) {
 		log.Println("unalbe to marshal json")
 	}
 	// push to redis
-	num, err := ps.redisMaster.Publish(channel, string(buf))
+	num, err := ps.redisPub.Publish(channel, string(buf))
 	return num, err
 }
 

@@ -1,12 +1,8 @@
 package pusher
 
 import (
-	//	"errors"
 	"github.com/igm/sockjs-go/sockjs"
 	"net/http"
-	//"net/url"
-	// "regexp"
-	// "strings"
 	"sync"
 )
 
@@ -40,32 +36,3 @@ func (h *handler) Prefix() string { return h.prefix }
 func (h *handler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	h.handleWebsocket(rw, req)
 }
-
-//func (h *handler) parseSessionID(url *url.URL) (string, error) {
-//	session := regexp.MustCompile(h.prefix + "/(?P<server>[^/.]+)/(?P<session>[^/.]+)/.*")
-//	matches := session.FindStringSubmatch(url.Path)
-//	if len(matches) == 3 {
-//		return matches[2], nil
-//	}
-//	return "", errors.New("unable to parse URL for session")
-//}
-
-//func (h *handler) sessionById(sessionID string) (*session, error) {
-//	h.sessionsMux.Lock()
-//	defer h.sessionsMux.Unlock()
-//	sess, exists := h.sessions[sessionID]
-//	if !exists {
-//		sess = newSession(sessionID, h.options.DisconnectDelay, h.options.HeartbeatDelay)
-//		h.sessions[sessionID] = sess
-//		if h.handlerFunc != nil {
-//			go h.handlerFunc(sess)
-//		}
-//		go func() {
-//			<-sess.closedNotify()
-//			h.sessionsMux.Lock()
-//			delete(h.sessions, sessionID)
-//			h.sessionsMux.Unlock()
-//		}()
-//	}
-//	return sess, nil
-//}

@@ -2,9 +2,7 @@ package pusher
 
 import (
 	"encoding/gob"
-	//"encoding/json"
 	"errors"
-	//"fmt"
 	"io"
 	"log"
 	"sync"
@@ -100,7 +98,6 @@ func newSession(sessionID string, sessionTimeoutInterval, heartbeatInterval time
 		heartbeatInterval:      heartbeatInterval,
 		closeCh:                make(chan struct{})}
 	s.Lock() // "go test -race" complains if ommited, not sure why as no race can happen here
-	log.Println("session timeout interval", sessionTimeoutInterval)
 	s.timer = time.AfterFunc(sessionTimeoutInterval, s.timeout)
 	s.Unlock()
 	return s
@@ -123,7 +120,6 @@ func (s *session) sendMessage(msg string) error {
 func (s *session) attachReceiver(recv receiver) error {
 	s.Lock()
 	defer s.Unlock()
-	log.Println("attachReceiver")
 	if s.recv != nil {
 		return errSessionReceiverAttached
 	}
@@ -134,14 +130,11 @@ func (s *session) attachReceiver(recv receiver) error {
 			s.detachReceiver()
 		case <-r.interruptedNotify():
 			s.detachReceiver()
-			log.Println("interruptedNotify, calling close")
 			s.close()
 		}
 	}(recv)
 
 	if s.state == sessionClosing {
-		// s.recv.sendFrame(s.closeFrame)
-		log.Println("closing would have sent close frame")
 		s.recv.close()
 		return nil
 	}
@@ -149,10 +142,8 @@ func (s *session) attachReceiver(recv receiver) error {
 		// s.recv.sendFrame("o")
 		s.state = sessionActive
 	}
-	log.Println("sending buffer")
 	s.recv.sendBulk(s.sendBuffer...)
 	s.sendBuffer = nil
-	log.Println("resetting timer to heartbeat ", s.heartbeatInterval)
 	s.timer.Stop()
 
 	s.timer = time.AfterFunc(s.heartbeatInterval, s.heartbeat)
@@ -175,8 +166,6 @@ func (s *session) heartbeat() {
 	defer s.Unlock()
 	log.Println("heartbeat")
 	if s.recv != nil { // timer could have fired between Lock and timer.Stop in detachReceiver
-		// s.recv.sendFrame("h")
-		log.Println("heartbeat would have been sent here")
 		s.recv.sendFrame(EVENT_PING_RAW)
 		s.timer = time.AfterFunc(s.heartbeatInterval, s.heartbeat)
 	}
@@ -200,15 +189,13 @@ func (s *session) closing() {
 		s.msgWriter.Close()
 		s.state = sessionClosing
 		if s.recv != nil {
-			log.Println("would have closed with send frame")
-			// s.recv.sendFrame(s.closeFrame)
 			s.recv.close()
 		}
 	}
 }
 
 func (s *session) timeout() {
-	log.Println("timeout called !")
+	log.Println("timeout called")
 	s.close()
 }
 
@@ -231,8 +218,6 @@ func (s *session) closedNotify() <-chan struct{} { return s.closeCh }
 func (s *session) Close(status uint32, reason string) error {
 	s.Lock()
 	if s.state < sessionClosing {
-		// s.closeFrame = closeFrame(status, reason)
-		log.Println("close frame would have been sent here")
 		s.Unlock()
 		s.closing()
 		return nil

@@ -3,18 +3,30 @@
 [x] - test firehose mode works
 [x] - quick check for race conditions 
 [x] - add flags to server 
-[ ] - object / keyspace notification tracking in redis
-	- on subscribe get the key and send as json 
-	- on change notification, get again and send as json
-	- make this optional in the settings for pubsub
+[x] - add to git! ready for push tomo
+[x] - work out how to publish messages to server, something about client event
+
+var foo = pusher.subscribe("foo");
+foo.trigger('client-event', {"some":{"data": ["in","here"]} })
+
+[x] - tidy up logging a bit 
+[x] - check we get published events 
+[x] - handle client events on the server, publish.. make sure socket_id is passed 
+
+[x] [x] - object- / keyspace notification tracking in redis
+	[x] - on subscribe get the key and send as json 
+	[x] - on change notification, get again and send as json
+	[x] - handle unsubscribe too 
+	[ ] - make this optional in the settings for pubsub
+[ ] - respect the debug flag 
 [ ] - socket identification and presence
 [ ] - socket state, with expires. allow clients to set some state
 [ ] - data should be passed through during pubsub without any decoding. needs more testing
-[ ] - work out how to publish messages to server, something about client event
 [ ] - auth on channel subscribe, private, and pusher style presense channels
 [ ] - test with the flash transport (low priority)
 [ ] - add some benchmarks, which is better normal or firehose
 [ ] - add rate limits, max message sizes, etc 
+[ ] - grab unminified pusher.js so its easier to follow
 
 # PLAYER
 [ ] - review the old player js 

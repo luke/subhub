@@ -30,7 +30,6 @@ func (h *handler) handleWebsocket(rw http.ResponseWriter, req *http.Request) {
 	req.ParseForm()
 	sid := req.Form.Get("sid") // , _ := h.parseSessionID(req.URL)
 	if sid == "" {
-		log.Println("session id not set, using random uuid")
 		sid = uuid.NewRandom().String()
 	}
 	rw.Header().Add("sid", sid)
@@ -80,7 +79,6 @@ func (h *handler) handleWebsocket(rw http.ResponseWriter, req *http.Request) {
 	case <-readCloseCh:
 	case <-receiver.doneNotify():
 	}
-	log.Println("calling close at end of handler")
 	sess.close()
 	conn.Close()
 }
@@ -100,7 +98,6 @@ func newWsReceiver(conn *websocket.Conn) *wsReceiver {
 func (w *wsReceiver) sendBulk(messages ...string) {
 	if len(messages) > 0 {
 		for _, message := range messages {
-			log.Println("send frame with message", message)
 			w.sendFrame(message)
 		}
 	}
