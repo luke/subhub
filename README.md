@@ -24,3 +24,7 @@ var foo1 = pusher.subscribe("object-foo1");
 foo1.bind("load",function(data){console.log("loaded", data);}); 
 foo1.bind("change",function(data){console.log("changed!", data);});
 
+Client events
+
+var testchan = pusher.subscribe("testchannel");
+testchan.trigger('client-test', {"data": "here"}); 
