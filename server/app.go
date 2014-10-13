@@ -1,6 +1,7 @@
 package server
 
 import (
+	"code.google.com/p/go-uuid/uuid"
 	"fmt"
 	"log"
 )
@@ -14,19 +15,28 @@ type AppSettings struct {
 	// EnableKeyspaceEvents bool `json:"enable_keyspace_events"`
 }
 
-func (s *server) createApp(appId string) {
+func newId() string {
+	return uuid.NewRandom().String()
+}
+
+func appKey(appId string) string {
+	return fmt.Sprintf(REDIS_APP_SETTINGS_HASH, appId)
+}
+
+func (s *server) createApp() string {
+	appId := newId()
 	log.Println("create app", appId)
-	// adds the app, creates the keys, returns info
-	key := fmt.Sprintf(REDIS_APP_SETTINGS_HASH, appId)
-	err := s.redis.HMSetJSON(key, &AppSettings{Name: "foo", ForceEncryption: true, EnableClientEvents: false})
+	key := appKey(appId)
+	err := s.redis.HMSetJSON(key, &AppSettings{})
 	if err != nil {
 		log.Println("error", err)
 	}
-	// return err
+	// TODO: generate auth keys at the same time
+	return appId
 }
 
 func (s *server) loadApp(appId string) *AppSettings {
-	key := fmt.Sprintf(REDIS_APP_SETTINGS_HASH, appId)
+	key := appKey(appId)
 	settings := &AppSettings{}
 	err := s.redis.HGetAllJSON(key, settings)
 	if err != nil {
@@ -36,9 +46,31 @@ func (s *server) loadApp(appId string) *AppSettings {
 }
 
 func (s *server) deleteApp(appId string) {
-	_ = fmt.Sprintf(REDIS_APP_SETTINGS_HASH, appId)
+	key := appKey(appId)
+	_, err := s.redis.Del(key)
+	if err != nil {
+		log.Println("error deleting app", err)
+	}
 }
 
-func (s *server) saveAppSettings(appId string, settings *AppSettings) {
-	_ = fmt.Sprintf(REDIS_APP_SETTINGS_HASH, appId)
+func (s *server) saveApp(appId string, settings *AppSettings) {
+	key := appKey(appId)
+	err := s.redis.HMSetJSON(key, settings)
+	if err != nil {
+		log.Println("problem saving app", err)
+	}
+}
+
+// TODO: add api for these methods with global auth, perhaps simple basic auth?
+
+func (s *server) testApp() {
+	appId := s.createApp()
+	settings := s.loadApp(appId)
+	log.Printf("%+v", settings)
+	settings.Name = "test"
+	s.saveApp(appId, settings)
+	settings2 := s.loadApp(appId)
+	log.Printf("%+v", settings2)
+	s.deleteApp(appId)
+
 }

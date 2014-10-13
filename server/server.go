@@ -74,9 +74,7 @@ func (s *server) Start() error {
 	if err != nil {
 		return err
 	}
-	s.createApp("foooooo")
-	settings := s.loadApp("foooooo")
-	log.Printf("%+v", settings)
+	s.testApp()
 	err = s.bind()
 
 	return err
