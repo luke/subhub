@@ -9,6 +9,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -30,17 +31,18 @@ var DefaultOptions = Options{
 }
 
 type Message struct {
-	Name   string `json:"name"`
-	Data   string `json:"data"`
-	Sender string `json:"sender"`
-	NodeId string `json:"node_id"`
+	Name      string `json:"name"`
+	Data      string `json:"data"`
+	Sender    string `json:"sender"`
+	Timestamp int64  `json:"timestamp"`
+	NodeId    string `json:"node_id"`
 }
 
 type pubsub struct {
 	lock sync.RWMutex
 	opts *Options
 
-	// redis clients
+	// redis clients - todo: switch over to using xredis wrapper
 	redisPub        *goredis.Redis  // used for pub
 	redisSub        *goredis.Redis  // used for sub
 	redisSubscriber *goredis.PubSub // used for subscribe, unsubscribe
@@ -184,6 +186,8 @@ func (ps *pubsub) subLoop() {
 		// special case to deal with keyspace notifications
 		if strings.HasPrefix(channel, KEYSPACE_NOTIFICATION_PREFIX) {
 			msg.Name = payload
+			// set the timestamp here... does it need .UTC(). ?
+			msg.Timestamp = time.Now().UnixNano()
 			ps.forwardToLocal(channel, msg)
 			continue
 		}
@@ -296,6 +300,7 @@ func (ps *pubsub) Publish(pub Publisher, channel string, msg *Message) (int64, e
 		msg.Sender = pub.ID()
 	}
 	msg.NodeId = ps.opts.PubSubNodeId
+	msg.Timestamp = time.Now().UnixNano() // utc?
 	var count int64 = 0
 	var num int64 = 0
 	var err error = nil

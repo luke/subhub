@@ -7,6 +7,7 @@ import (
 	"github.com/igm/sockjs-go/sockjs"
 	"github.com/screencloud/subhub/pubsub"
 	"github.com/screencloud/subhub/pusher"
+	"github.com/screencloud/subhub/xredis"
 	"github.com/xuyu/goredis"
 	"log"
 	"net/http"
@@ -22,17 +23,20 @@ type server struct {
 
 	pubsub pubsub.PubSub
 
-	redisMaster *goredis.Redis // used for write
-	redisSlave  *goredis.Redis // used for reads
+	redis *xredis.Redis
+	//redisMaster *goredis.Redis // used for write
+	//redisSlave  *goredis.Redis // used for reads
 
 	// todo: maintain list / map of sockets
 }
 
 type Event struct {
-	Event    string                 `json:"event"`
-	Channel  string                 `json:"channel,omitempty"`
-	Data     map[string]interface{} `json:"data,omitempty"`
-	SocketId string                 `json:"socket_id,omitempty"`
+	Event   string `json:"event"`
+	Channel string `json:"channel,omitempty"`
+	//Data     string `json:"data,omitempty"`
+	Data      map[string]interface{} `json:"data,omitempty"`
+	SocketId  string                 `json:"socket_id,omitempty"`
+	Timestamp int64                  `json:"timestamp,omitempty"`
 }
 
 type Options struct {
@@ -70,32 +74,26 @@ func (s *server) Start() error {
 	if err != nil {
 		return err
 	}
+	s.createApp("foooooo")
+	settings := s.loadApp("foooooo")
+	log.Printf("%+v", settings)
 	err = s.bind()
+
 	return err
 }
 
 func (s *server) connectRedis() error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-
 	log.Println("server connect redis")
-
-	redisMaster, err := goredis.Dial(&goredis.DialConfig{
-		Address: s.opts.RedisMasterAddress})
+	redis, err := xredis.Connect(&goredis.DialConfig{
+		Address: s.opts.RedisMasterAddress}, &goredis.DialConfig{
+		Address: s.opts.RedisSlaveAddress})
 	if err != nil {
 		log.Fatal("Unable to connect to redis master", err)
 		return err
 	}
-	s.redisMaster = redisMaster
-
-	redisSlave, err := goredis.Dial(&goredis.DialConfig{
-		Address: s.opts.RedisSlaveAddress})
-	if err != nil {
-		log.Fatal("Unable to connect to redis sub", err)
-		return err
-	}
-	s.redisSlave = redisSlave
-
+	s.redis = redis
 	return nil
 }
 
@@ -106,6 +104,8 @@ func (s *server) bind() error {
 	http.Handle("/app/", pusher.NewHandler("/app", sockjs.DefaultOptions, s.newPusherWSHandlerFunc()))
 	// fallback transports to sockjs, this does xhr-streaming, polling, iframes, etc
 	http.Handle("/pusher/", sockjs.NewHandler("/pusher", sockjs.DefaultOptions, s.newSockJSHandlerFunc()))
+	// add an auth endpoint for generating the signatures used in private and presence channels
+	http.HandleFunc("/auth", s.newAuthHandlerFunc())
 	// lastly bind web folder for static files
 	http.Handle("/", http.FileServer(http.Dir("web/")))
 
@@ -130,7 +130,8 @@ type socket struct {
 	session Session
 	// Path which contains the app id / client token
 	path string
-
+	// map of subscribed presence-channels to user_ids
+	presense map[string]string
 	// hack for now to access server
 	server *server
 }
@@ -148,7 +149,8 @@ func (sock *socket) Receive(channel string, msg *pubsub.Message) {
 		return
 	}
 
-	packet := fmt.Sprintf(RAW_CHANNEL_EVENT, msg.Name, channel, msg.Data)
+	data, _ := json.Marshal(msg.Data)
+	packet := fmt.Sprintf(RAW_CHANNEL_EVENT, msg.Name, channel, data, msg.Timestamp)
 	log.Println("packet", packet)
 	sock.session.Send(packet)
 }
@@ -157,10 +159,11 @@ func (s *server) newSocket(session Session, path string) *socket {
 	log.Println("new socket %s with path: %s", session.ID(), path)
 	id := uuid.NewRandom().String()
 	sock := &socket{
-		id:      id,
-		session: session,
-		path:    path,
-		server:  s,
+		id:       id,
+		session:  session,
+		path:     path,
+		presense: make(map[string]string),
+		server:   s,
 	}
 	return sock
 }
@@ -210,6 +213,9 @@ func (s *server) newSockJSHandlerFunc() sockJSHandlerFunc {
 
 func (s *server) handleSocket(sock *socket) {
 	log.Println("socket loop start")
+
+	// check the path is a valid app id
+
 	// send connection established
 	sock.session.Send(fmt.Sprintf(RAW_CONNECTION_ESTABLISHED, sock.id))
 	// recv loop
@@ -230,6 +236,11 @@ func (s *server) handleSocket(sock *socket) {
 	}
 	log.Println("socket closing, unsubscribe all")
 	s.pubsub.UnsubscribeAll(sock)
+
+	// presense: trigger member removed for each presence channel
+	for presenseChannel, userId := range sock.presense {
+		s.presenseMemberRemoved(sock, presenseChannel, userId)
+	}
 }
 
 func (s *server) handleEvent(sock *socket, event *Event) {
@@ -244,12 +255,57 @@ func (s *server) handleEvent(sock *socket, event *Event) {
 		log.Println("got a pong back, all is ok")
 	case EVENT_SUBSCRIBE:
 		// call pubsub subscribe
-		channel, _ := event.Data["channel"].(string)
-		auth, _ := event.Data["auth"].(string)
-		s.handleSubscribe(sock, channel, auth)
+		//var data map[string]interface{}
+		//err := json.Unmarshal([]byte(event.Data), &data)
+		//if err != nil {
+		//	log.Println("error decoding event data", err)
+		//	return
+		//}
+		channel := event.Data["channel"].(string)
+
+		switch {
+		// private-
+		case strings.HasPrefix(channel, CHANNEL_PREFIX_PRIVATE):
+			auth := event.Data["auth"].(string)
+			message := fmt.Sprintf("%s:%s", sock.ID(), channel)
+			if ok := s.verifyAuth(auth, message); !ok {
+				log.Println("auth not ok, return some error")
+				return
+			}
+
+			// channel = strings.TrimPrefix(channel, CHANNEL_PREFIX_PRIVATE)
+
+			s.handleSubscribe(sock, channel)
+		// presence-
+		case strings.HasPrefix(channel, CHANNEL_PREFIX_PRESENSE):
+
+			auth := event.Data["auth"].(string)
+			channelData := event.Data["channel_data"].(string)
+			message := fmt.Sprintf("%s:%s:%s", sock.ID(), channel, channelData)
+			if ok := s.verifyAuth(auth, message); !ok {
+				log.Println("auth not ok, return some error")
+				return
+			}
+
+			s.handleSubscribePresense(sock, channel, channelData)
+		// any other, its public
+		default:
+			s.handleSubscribe(sock, channel)
+		}
+
+		// auth := event.Data["auth"].(string)
+		// channel_data := event.Data["channel_data"].(string)
+		// check for ?auth= in the channel name
+		// s.handleSubscribe(sock, channel, auth)
 		log.Println("subscribe event")
 	case EVENT_UNSUBSCRIBE:
 		// call pubsub unsubscribe
+		//var data map[string]interface{}
+		//err := json.Unmarshal([]byte(event.Data), &data)
+		//if err != nil {
+		//	log.Println("error decoding event data", err)
+		//	return
+		//}
 		log.Println("unsubscribe event")
 		channel, _ := event.Data["channel"].(string)
 		s.handleUnsubscribe(sock, channel)
@@ -270,98 +326,15 @@ func (s *server) handleEvent(sock *socket, event *Event) {
 const (
 	CHANNEL_PREFIX_PRIVATE  = "private-"
 	CHANNEL_PREFIX_PRESENSE = "presence-"
+	CHANNEL_PREFIX_KEYSPACE = "keyspace-"
 	CHANNEL_PREFIX_OBJECT   = "object-"
+	CHANNEL_PREFIX_TOKEN    = "token-"
 )
 
-func (s *server) handleSubscribe(sock *socket, channel string, auth string) {
-	// check what kind of channel we are subscribing to, forward
-	switch {
-	// private-
-	case strings.HasPrefix(channel, CHANNEL_PREFIX_PRIVATE):
-		channel = strings.TrimPrefix(channel, CHANNEL_PREFIX_PRIVATE)
-		s.handleSubscribePrivate(sock, channel, auth)
-	// presence-
-	case strings.HasPrefix(channel, CHANNEL_PREFIX_PRESENSE):
-		channel = strings.TrimPrefix(channel, CHANNEL_PREFIX_PRESENSE)
-		s.handleSubscribePresense(sock, channel, auth)
-	// object-
-	case strings.HasPrefix(channel, CHANNEL_PREFIX_OBJECT):
-		channel = strings.TrimPrefix(channel, CHANNEL_PREFIX_OBJECT)
-		s.handleSubscribeObject(sock, channel, auth)
-	// any other, its public
-	default:
-		s.handleSubscribePublic(sock, channel)
-	}
-}
-
-func (s *server) handleSubscribePublic(sock *socket, channel string) {
+func (s *server) handleSubscribe(sock *socket, channel string) {
 	s.pubsub.Subscribe(sock, channel)
 	// todo: check this actually subscribed, if already subed do we send success?
-	sock.session.Send(fmt.Sprintf(RAW_SUBSCRIPTION_SUCCEEDED, channel))
-}
-
-func (s *server) handleSubscribePrivate(sock *socket, channel string, auth string) {
-	panic("private channels not yet implemented")
-}
-
-func (s *server) handleSubscribePresense(sock *socket, channel string, auth string) {
-	panic("presense channels not yet implemented")
-}
-
-const (
-	OBJECT_TYPE_STRING = "string"
-	OBJECT_TYPE_LIST   = "list"
-	OBJECT_TYPE_HASH   = "hash"
-	OBJECT_TYPE_SET    = "set"
-	OBJECT_TYPE_ZSET   = "zset"
-	OBJECT_TYPE_NONE   = "none"
-)
-
-func redisGetKeyData(r *goredis.Redis, key string) (string, error) {
-	objectType, err := r.Type(key)
-	var data string = ""
-	if err != nil {
-		log.Println("Error getting redis type", err)
-		return data, err
-	}
-	log.Println("redis type response", objectType)
-	var resp interface{} = nil
-	switch objectType {
-	case OBJECT_TYPE_STRING:
-		resp, err = r.Get(key)
-	case OBJECT_TYPE_HASH:
-		resp, err = r.HGetAll(key)
-	case OBJECT_TYPE_LIST:
-		resp, err = r.LRange(key, 0, -1)
-	case OBJECT_TYPE_SET:
-		resp, err = r.SMembers(key)
-	case OBJECT_TYPE_ZSET:
-		resp, err = r.ZRange(key, 0, -1, true)
-	case OBJECT_TYPE_NONE:
-		// key doesnt exist, return empty response
-		return data, err
-	default:
-		// unknow type return empty response
-		return data, err
-	}
-	if err != nil {
-		log.Println("Error getting redis value", err)
-		return data, err
-	}
-	if resp != nil {
-		log.Printf("got resp to encode %+v", resp)
-		// if we have a resp try decoding it
-		var encoded []byte
-		encoded, err = json.Marshal(resp)
-		if err == nil {
-			data = string(encoded)
-			log.Printf("after encoding %+v", string(data))
-		}
-	}
-	if err != nil {
-		log.Println("Error encoding value to json string", err)
-	}
-	return data, err
+	sock.session.Send(fmt.Sprintf(RAW_SUBSCRIPTION_SUCCEEDED, channel, "\"\""))
 }
 
 type RawEvent struct {
@@ -371,69 +344,24 @@ type RawEvent struct {
 	SocketId string `json:"socket_id,omitempty"`
 }
 
-const KEYSPACE_NOTIFICATION_PREFIX = "__keyspace@0__:"
-
-func (s *server) handleSubscribeObject(sock *socket, channel string, auth string) {
-	// panic("object channels not yet implemented")
-
-	// check the key type, is it a hash or a key
-
-	data, err := redisGetKeyData(s.redisSlave, channel)
-	if err != nil {
-		log.Println("problem subscribing to object", err.Error())
-		return
-	}
-
-	event := &RawEvent{
-		Channel: CHANNEL_PREFIX_OBJECT + channel,
-		Event:   "load",
-		Data:    data,
-	}
-
-	packet, err := json.Marshal(event)
-
-	if err != nil {
-		log.Println("problem encoding object load")
-		return
-	}
-
-	// now subscribe to keyspace notifications
-	s.pubsub.Subscribe(sock, KEYSPACE_NOTIFICATION_PREFIX+channel)
-
-	sock.session.Send(fmt.Sprintf(RAW_SUBSCRIPTION_SUCCEEDED, channel))
-	sock.session.Send(string(packet))
-}
-
-func (s *server) handleNotifyObjectChange(sock *socket, channel string, keyspaceEvent string) {
-
-	data, err := redisGetKeyData(s.redisSlave, channel)
-	if err != nil {
-		log.Println("problem subscribing to object", err.Error())
-		return
-	}
-
-	event := &RawEvent{
-		Channel: CHANNEL_PREFIX_OBJECT + channel,
-		Event:   "change",
-		Data:    data,
-	}
-
-	packet, err := json.Marshal(event)
-
-	if err != nil {
-		log.Println("problem encoding object load")
-		return
-	}
-
-	sock.session.Send(string(packet))
-}
-
 func (s *server) handleUnsubscribe(sock *socket, channel string) {
 
 	// if object channel change the prefix
 	if strings.HasPrefix(channel, CHANNEL_PREFIX_OBJECT) {
 		channel = strings.TrimPrefix(channel, CHANNEL_PREFIX_OBJECT)
 		channel = KEYSPACE_NOTIFICATION_PREFIX + channel
+	}
+
+	// if keyspace channel change the prefix
+	if strings.HasPrefix(channel, CHANNEL_PREFIX_KEYSPACE) {
+		channel = strings.TrimPrefix(channel, CHANNEL_PREFIX_KEYSPACE)
+		channel = KEYSPACE_NOTIFICATION_PREFIX + channel
+	}
+
+	if strings.HasPrefix(channel, CHANNEL_PREFIX_PRESENSE) {
+		// remove from hash.
+		s.handleUnsubscribePresense(sock, channel)
+		return
 	}
 
 	s.pubsub.Unsubscribe(sock, channel)

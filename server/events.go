@@ -41,8 +41,10 @@ const (
 const RAW_CONNECTION_ESTABLISHED = `{"event":"pusher:connection_established","data":"{\"socket_id\":\"%s\",\"activity_timeout\":120}"}`
 const RAW_PING = "{\"event\":\"pusher:ping\",\"data\":\"{}\"}"
 const RAW_PONG = "{\"event\":\"pusher:pong\",\"data\":\"{}\"}"
-const RAW_SUBSCRIPTION_SUCCEEDED = `{"event":"pusher_internal:subscription_succeeded","data":"{\"channel\":\"%s\"}"}`
-const RAW_CHANNEL_EVENT = `{"event":"%s","channel":"%s","data":"%s"}`
+const RAW_SUBSCRIPTION_SUCCEEDED = `{"event":"pusher_internal:subscription_succeeded","channel":"%s","data":%s}`
+
+// const RAW_PRESENSE_SUBSCRIPTION_SUCCEEDED = `{"event":"pusher_internal:subscription_succeeded","data":"{\"channel\":\"%s\", \"presense\": %s}"}`
+const RAW_CHANNEL_EVENT = `{"event":"%s","channel":"%s","data":%s, "timestamp":%d}`
 
 type ConnectionEstablishedData struct {
 	SocketId        string `json:"socket_id"`
@@ -64,7 +66,7 @@ type ErrorData struct {
 	Code    int    `json:"code"`
 }
 
-type SubscriptionSucceededData struct {
+type PresenseSubscriptionSucceededData struct {
 	Presence map[string]interface{} `json:"presence"`
 	// {
 	// "ids": ["1","2"],
@@ -74,7 +76,7 @@ type SubscriptionSucceededData struct {
 }
 
 type MemberAddedData struct {
-	UserId   string                 `json:"user_id"`
+	UserId   interface{}            `json:"user_id"`
 	UserInfo map[string]interface{} `json:"user_info,omitempty"`
 }
 
