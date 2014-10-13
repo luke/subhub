@@ -73,7 +73,8 @@ func (s *server) newRestApiHandler() http.Handler {
 	r.POST("/apps/:app_id/events", func(c *gin.Context) {
 		// POST
 
-		// The event data should not be larger than 10KB. If you attempt to POST an event with a larger data parameter you will receive a 413 error code.
+		// The event data should not be larger than 10KB.
+		// If you attempt to POST an event with a larger data parameter you will receive a 413 error code.
 
 		// name	Event name (required)
 		// data	Event data (required) - limited to 10KB
