@@ -1,10 +1,10 @@
 FROM scratch
 
-MAINTAINER Derek Collison <derek@apcera.com>
+MAINTAINER screencloud
 
-ADD gnatsd /gnatsd
+ADD subhub /subhub
 
 CMD []
-ENTRYPOINT ["/gnatsd", "-p", "4222", "-m", "8333"]
+ENTRYPOINT ["/subhub"]
 
-EXPOSE 4222 8333
+EXPOSE 8081

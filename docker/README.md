@@ -4,4 +4,8 @@ A docker image for subhub. This is created as a single static executable, so the
 
 Credit: This recipe for dockerizing a go app was copied from GNATSD repo
 
+Updating the image run.. 
 
+./build.sh
+docker login
+docker push screencloud/subhub
