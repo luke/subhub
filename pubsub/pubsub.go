@@ -1,9 +1,9 @@
 package pubsub
 
 import (
-	"code.google.com/p/go-uuid/uuid"
 	"encoding/json"
 	"github.com/apcera/gnatsd/sublist"
+	"github.com/screencloud/subhub/uuid"
 	"github.com/xuyu/goredis"
 	"gopkg.in/fatih/set.v0"
 	"log"

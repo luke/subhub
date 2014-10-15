@@ -1,12 +1,12 @@
 package server
 
 import (
-	"code.google.com/p/go-uuid/uuid"
 	"encoding/json"
 	"fmt"
 	"github.com/igm/sockjs-go/sockjs"
 	"github.com/screencloud/subhub/pubsub"
 	"github.com/screencloud/subhub/pusher"
+	"github.com/screencloud/subhub/uuid"
 	"github.com/screencloud/subhub/xredis"
 	"github.com/xuyu/goredis"
 	"log"
