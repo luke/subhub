@@ -4,8 +4,8 @@ import (
 	"log"
 	"net/http"
 
-	"code.google.com/p/go-uuid/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/screencloud/subhub/uuid"
 )
 
 // WebSocketReadBufSize is a parameter that is used for WebSocket Upgrader.
