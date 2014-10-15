@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -65,6 +66,14 @@ func newAuthMiddleware(s *server) gin.HandlerFunc {
 	}
 }
 
+type EventJSON struct {
+	Name     string   `json:"name" binding:"required"`
+	Data     string   `json:"data" binding:"required"` // limited to 10KB
+	Channels []string `json:"channels"`                // limited to 10 channels
+	Channel  string   `json:"channel"`                 //  (can be used instead of channels)
+	SocketId string   `json:"socket_id"`               // excludes the event from being sent to a specific connection
+}
+
 func (s *server) newRestApiHandler() http.Handler {
 
 	r := gin.Default()
@@ -76,24 +85,33 @@ func (s *server) newRestApiHandler() http.Handler {
 		// The event data should not be larger than 10KB.
 		// If you attempt to POST an event with a larger data parameter you will receive a 413 error code.
 
-		// name	Event name (required)
-		// data	Event data (required) - limited to 10KB
-		// channels	Array of one or more channel names - limited to 10 channels
-		// channel	Channel name if publishing to a single channel (can be used instead of channels)
-		// socket_id	Excludes the event from being sent to a specific connection
+		var json EventJSON
+		c.Bind(&json)
+
+		// TODO: process
 
 		// Response is an empty JSON hash.
-
+		c.JSON(200, gin.H{})
 	})
 
 	r.GET("/apps/:app_id/channels", func(c *gin.Context) {
 
-		// filter_by_prefix	Filter the returned channels by a specific prefix. For example in order to return only presence channels you would set filter_by_prefix=presence-
-		// info	A comma separated list of attributes which should be returned for each channel. If this parameter is missing, an empty hash of attributes will be returned for each channel.
-
+		q := c.Request.URL.Query()
+		// filter_by_prefix	 Filter the returned channels by a specific prefix.
+		// For example in order to return only presence channels you would set filter_by_prefix=presence-
+		filterPrefix := q.Get("filter_by_prefix")
+		// info	A comma separated list of attributes which should be returned for each channel.
+		// If this parameter is missing, an empty hash of attributes will be returned for each channel.
+		info := strings.Split(q.Get("info"), ",")
 		// available attributes
 		// user_count	Integer	Presence	Number of distinct users currently subscribed to this channel (a single user may be subscribed many times, but will only count as one)
 
+		log.Println(filterPrefix)
+		log.Println(info)
+
+		channelMap := gin.H{"example": gin.H{"user_count": 0}}
+
+		c.JSON(200, gin.H{"channels": channelMap})
 		//{
 		//  "channels": {
 		//    "presence-foobar": {
@@ -108,11 +126,15 @@ func (s *server) newRestApiHandler() http.Handler {
 
 	r.GET("/apps/:app_id/channels/:channel_name", func(c *gin.Context) {
 
+		q := c.Request.URL.Query()
 		// info
-
+		info := strings.Split(q.Get("info"), ",")
 		//user_count	Integer	Presence	Number of distinct users currently subscribed to this channel (a single user may be subscribed many times, but will only count as one)
-		//subscription_count	Integer	All	[BETA] Number of connections currently subscribed to this channel. This attribute is not available by default; please contact support@pusher.com if you would like to beta test this feature.
+		//subscription_count	Integer	All	[BETA] Number of connections currently subscribed to this channel. This attribute is not available by default
 
+		log.Println(info)
+
+		c.JSON(200, gin.H{"occupied": true, "user_count": 42, "subscription_count": 42})
 		//{
 		//  occupied: true,
 		//  user_count: 42,
@@ -123,8 +145,9 @@ func (s *server) newRestApiHandler() http.Handler {
 
 	r.GET("/apps/:app_id/channels/:channel_name/users", func(c *gin.Context) {
 
-		// Note that only presence channels allow this functionality, and a request to any other kind of channel will result in a 400 HTTP code.
-
+		// Note that only presence channels allow this functionality,
+		// and a request to any other kind of channel will result in a 400 HTTP code."
+		c.JSON(200, gin.H{"users": "..."})
 		//{
 		//  "users": [
 		//    { "id": 1 },
